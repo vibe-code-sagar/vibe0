@@ -176,6 +176,7 @@ function HomePage() {
           match_score: score,
           match_percentage: score,
           reasoning: match ? match.reasoning : null,
+          confidence: match ? match.confidence : null,
         };
       }));
 

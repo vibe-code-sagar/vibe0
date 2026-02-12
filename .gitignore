@@ -9,6 +9,7 @@ __pycache__/
 .Python
 env/
 venv/
+.venv/
 ENV/
 build/
 develop-eggs/
@@ -49,3 +50,8 @@ Thumbs.db
 dist/
 build/
 *.log
+
+# Database
+*.db
+*.sqlite
+*.sqlite3

@@ -43,6 +43,7 @@ export default function JobList({ jobs, selectedJob, onSelectJob, loading, hasSe
         const isSelected = selectedJob?.id === job.id;
 
         const score = job.match_score ?? job.match_percentage ?? null;
+        const confidence = job.confidence;
 
         const relativeTime = getRelativeTime(job.created);
         const isRecent = isPostedInLast24Hours(job.created);
@@ -61,6 +62,15 @@ export default function JobList({ jobs, selectedJob, onSelectJob, loading, hasSe
               <div className="jobCard__info">
                 <h3 className="jobCard__title">{job.title}</h3>
                 <p className="jobCard__company">{job.company}</p>
+                {confidence !== null && confidence !== undefined && score != null && (
+                  <div style={{ 
+                    fontSize: '0.7rem', 
+                    color: confidence >= 0.8 ? '#10b981' : confidence >= 0.6 ? '#f59e0b' : '#ef4444',
+                    marginTop: '0.25rem'
+                  }}>
+                    {confidence >= 0.8 ? '✓' : '⚠'} {Math.round(confidence * 100)}% confidence
+                  </div>
+                )}
               </div>
               {score != null && (
                 <span className={`match-pill ${pillClass}`}>

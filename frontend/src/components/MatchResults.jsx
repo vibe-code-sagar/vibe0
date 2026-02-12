@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 
 function MatchCard({ result }) {
   const [expanded, setExpanded] = useState(false);
-  const { title, company, match_score, match_percentage, reasoning } = result;
+  const { title, company, match_score, match_percentage, reasoning, confidence } = result;
 
   const score = Math.round(match_score ?? match_percentage ?? 0);
 
@@ -22,6 +22,15 @@ function MatchCard({ result }) {
         <div>
           <h3 className="matchCard__title">{title}</h3>
           <p className="matchCard__company">{company}</p>
+          {confidence !== undefined && (
+            <div style={{ 
+              fontSize: '0.7rem', 
+              color: confidence >= 0.8 ? '#10b981' : confidence >= 0.6 ? '#f59e0b' : '#ef4444',
+              marginTop: '0.25rem'
+            }}>
+              AI Confidence: {Math.round(confidence * 100)}%
+            </div>
+          )}
         </div>
         <span className={`matchCard__score ${scoreColorClass}`}>{score}%</span>
       </div>
