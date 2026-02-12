@@ -126,6 +126,71 @@ def _call_ollama_with_retry(prompt: str, max_retries: int = MAX_RETRIES) -> str:
         raise last_error
     return ""
 
+def call_llm_safe(prompt: str, expect_array: bool = False) -> dict:
+    """Safely call LLM with JSON parsing and cleanup on failure.
+    
+    Behavior:
+    1. Call LLM.
+    2. Try JSON parse.
+    3. If fail:
+       - Clean escape sequences.
+       - Retry once.
+    4. If still fail:
+       - Return {"error": "parse_failed"}
+    """
+    print("[Ollama] Calling LLM with safe JSON parsing...")
+    
+    # First attempt
+    try:
+        response_text = _call_ollama_with_retry(prompt)
+        data = safe_json_parse(response_text, expect_array=expect_array)
+        
+        if isinstance(data, dict) and "error" not in data:
+            print("[Ollama] JSON parsed successfully on first attempt")
+            return data
+        elif isinstance(data, list):
+            print(f"[Ollama] JSON parsed as array ({len(data)} items) on first attempt")
+            return data if expect_array else {"data": data}
+        
+        print("[Ollama] First parse returned invalid data, attempting cleanup...")
+    except Exception as e:
+        print(f"[Ollama] First attempt failed: {str(e)}, attempting cleanup...")
+    
+    # Second attempt with cleanup
+    try:
+        response_text = _call_ollama_with_retry(prompt)
+        
+        # Clean the response
+        cleaned = response_text.strip()
+        if cleaned.startswith("```json"):
+            cleaned = cleaned[7:]
+        elif cleaned.startswith("```"):
+            cleaned = cleaned[3:]
+        if cleaned.endswith("```"):
+            cleaned = cleaned[:-3]
+        cleaned = cleaned.strip()
+        
+        # Remove invalid escape sequences
+        import re as regex_module
+        sanitized = regex_module.sub(r'\\(?!["\\/bfnrtu])', '', cleaned)
+        
+        data = json.loads(sanitized)
+        
+        if isinstance(data, dict) and "error" not in data:
+            print("[Ollama] JSON parsed successfully after cleanup")
+            return data
+        elif isinstance(data, list):
+            print(f"[Ollama] JSON parsed as array ({len(data)} items) after cleanup")
+            return data if expect_array else {"data": data}
+        
+        print("[Ollama] Cleanup parse returned invalid data")
+    except Exception as e:
+        print(f"[Ollama] Cleanup attempt also failed: {str(e)}")
+    
+    # Return error dict if both attempts fail
+    print("[Ollama] WARNING: Returning parse_failed error")
+    return {"error": "parse_failed"}
+
 def _calculate_confidence(data: dict, expected_fields: list) -> float:
     """Calculate confidence score based on response completeness and quality."""
     if not data:
@@ -174,12 +239,21 @@ Provide a JSON response with exactly these fields:
 
 Return ONLY valid JSON, no markdown formatting."""
 
-    response_text = _call_ollama_with_retry(prompt)
-    print(f"[Ollama] Raw analyze response length: {len(response_text)}")
+    # Use safe LLM wrapper for robust JSON parsing
+    data = call_llm_safe(prompt, expect_array=False)
     
-    # Use safe JSON parsing
+    # Handle parse failure
+    if "error" in data:
+        print(f"[Ollama] Resume analysis failed: {data['error']}")
+        return AnalyzeResumeResponse(
+            ats_score=0.0,
+            missing_keywords=[],
+            strengths=[],
+            improvements=["Unable to analyze resume due to parsing error. Please try again."],
+            confidence=0.0
+        )
+    
     try:
-        data = safe_json_parse(response_text, expect_array=False)
         
         # Calculate confidence score
         expected_fields = ["ats_score", "missing_keywords", "strengths", "improvements"]
@@ -256,47 +330,43 @@ EXAMPLE FORMAT:
 
 Return ONLY the JSON array for all {len(jobs)} jobs. Start your response with [ and end with ]."""
 
-    response_text = _call_ollama_with_retry(prompt)
-    print(f"[Ollama] Raw match response length: {len(response_text)}")
+    # Use safe LLM wrapper for robust JSON parsing
+    data = call_llm_safe(prompt, expect_array=True)
     
-    # Use safe JSON parsing with array expectation
-    try:
-        data = safe_json_parse(response_text, expect_array=True)
-        
-        if not isinstance(data, list):
-            print(f"[Ollama] Warning: Expected array but got {type(data)}")
-            return []
-        
-        results = []
-        for item in data:
-            try:
-                # Calculate confidence based on match quality
-                expected_fields = ["title", "company", "match_score", "reasoning"]
-                confidence = _calculate_confidence(item, expected_fields)
-                
-                # Adjust confidence based on reasoning length (longer = more confident)
-                reasoning = str(item.get("reasoning", ""))
-                if len(reasoning) > 50:
-                    confidence = min(1.0, confidence + 0.1)
-                
-                results.append(MatchJobResult(
-                    title=str(item.get("title", "Unknown")),
-                    company=str(item.get("company", "Unknown")),
-                    match_score=float(item.get("match_score", 0)),
-                    reasoning=reasoning,
-                    confidence=confidence
-                ))
-            except Exception as e:
-                print(f"[Ollama] Error parsing job result: {str(e)}")
-                continue
-        
-        print(f"[Ollama] Successfully parsed {len(results)} job matches with avg confidence: {sum(r.confidence for r in results) / len(results):.2f}" if results else "[Ollama] No results parsed")
-        return results
-        
-    except Exception as e:
-        print(f"[Ollama] Match jobs error: {str(e)}")
-        # Return empty list instead of crashing
+    # Handle parse failure
+    if "error" in data:
+        print(f"[Ollama] Job matching failed: {data['error']}")
         return []
+    
+    if not isinstance(data, list):
+        print(f"[Ollama] Warning: Expected array but got {type(data)}")
+        return []
+    
+    results = []
+    for item in data:
+        try:
+            # Calculate confidence based on match quality
+            expected_fields = ["title", "company", "match_score", "reasoning"]
+            confidence = _calculate_confidence(item, expected_fields)
+            
+            # Adjust confidence based on reasoning length (longer = more confident)
+            reasoning = str(item.get("reasoning", ""))
+            if len(reasoning) > 50:
+                confidence = min(1.0, confidence + 0.1)
+            
+            results.append(MatchJobResult(
+                title=str(item.get("title", "Unknown")),
+                company=str(item.get("company", "Unknown")),
+                match_score=float(item.get("match_score", 0)),
+                reasoning=reasoning,
+                confidence=confidence
+            ))
+        except Exception as e:
+            print(f"[Ollama] Error parsing job result: {str(e)}")
+            continue
+    
+    print(f"[Ollama] Successfully parsed {len(results)} job matches with avg confidence: {sum(r.confidence for r in results) / len(results):.2f}" if results else "[Ollama] No results parsed")
+    return results
 
 async def generate_cover_letter(resume_text: str, job_description: str, company: str) -> GenerateCoverLetterResponse:
     print(f"[Ollama] Generating cover letter for {company}")
