@@ -16,7 +16,8 @@ def test_models():
         CleanedJob, 
         AnalyzeResumeResponse, 
         MatchJobResult,
-        JobForMatching
+        JobForMatching,
+        OptimizeResumeResponse
     )
     
     print("✓ Testing model changes...")
@@ -56,6 +57,17 @@ def test_models():
     )
     assert match.confidence == 0.85
     print("  ✓ MatchJobResult with confidence works")
+    
+    # Test OptimizeResumeResponse with new fields (original_score and new_score)
+    optimized = OptimizeResumeResponse(
+        optimized_resume="Optimized resume text...",
+        original_score=65.0,
+        new_score=85.0
+    )
+    assert optimized.optimized_resume == "Optimized resume text..."
+    assert optimized.original_score == 65.0
+    assert optimized.new_score == 85.0
+    print("  ✓ OptimizeResumeResponse with original_score and new_score works")
     
     print("✅ All model tests passed!\n")
 
@@ -170,11 +182,11 @@ def main():
         print("=" * 60)
         print()
         print("Summary of implemented features:")
-        print("1. ✓ Per-job matching endpoint added")
-        print("2. ✓ Confidence scoring implemented")
-        print("3. ✓ Keyword injection resume optimization enhanced")
-        print("4. ✓ Improved 24-hour filtering logic")
-        print("5. ✓ Frontend components updated to show confidence")
+        print("1. ✓ Removed estimated ATS score from optimized resume generation")
+        print("2. ✓ Replace with actual analyze_resume call to get real new_score")
+        print("3. ✓ Added original_score to backend response")
+        print("4. ✓ Updated frontend to use new_score instead of estimated_new_score")
+        print("5. ✓ Updated UI label from 'Estimated New Score' to 'New ATS Score'")
         print()
         return 0
     except Exception as e:
