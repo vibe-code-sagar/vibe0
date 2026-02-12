@@ -3,7 +3,7 @@ import React from 'react';
 export default function ATSResult({ atsResult, onOptimize, optimizing, canOptimize }) {
   if (!atsResult) return null;
 
-  const { ats_score, missing_keywords, strengths, improvements } = atsResult;
+  const { ats_score, missing_keywords, strengths, improvements, confidence } = atsResult;
 
   // Score color
   let scoreClass = 'atsScore--red';
@@ -37,6 +37,19 @@ export default function ATSResult({ atsResult, onOptimize, optimizing, canOptimi
       <div className="cardHeader">
         <h2 className="cardTitle">ATS Analysis Results</h2>
         <p className="cardSubTitle">How well your resume matches this job description</p>
+        {confidence !== undefined && (
+          <div style={{ 
+            marginTop: '0.5rem', 
+            fontSize: '0.75rem', 
+            color: confidence >= 0.8 ? '#10b981' : confidence >= 0.6 ? '#f59e0b' : '#ef4444',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.25rem'
+          }}>
+            <span>{confidence >= 0.8 ? '✓' : confidence >= 0.6 ? '⚠' : '⚠'}</span>
+            <span>AI Confidence: {Math.round(confidence * 100)}%</span>
+          </div>
+        )}
       </div>
 
       {/* Score */}

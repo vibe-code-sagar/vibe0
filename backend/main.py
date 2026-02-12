@@ -69,18 +69,22 @@ async def get_jobs(
             now = datetime.now(timezone.utc)
             cutoff = now - timedelta(hours=24)
             filtered_jobs = []
+            jobs_without_dates = []
             
             print(f"[GET /jobs] 🔥 Applying strict 24-hour filter (cutoff: {cutoff})")
             
             for job in jobs:
-                # Include jobs without 'created' field by default
-                if "created" not in job or not job["created"]:
-                    filtered_jobs.append(job)
+                # Check if job has created field
+                created_value = getattr(job, 'created', None) if hasattr(job, '__dict__') else job.get("created")
+                
+                if not created_value:
+                    # Track jobs without dates separately - will add them at the end
+                    jobs_without_dates.append(job)
                     continue
                 
                 try:
                     # Parse ISO timestamp (e.g., "2026-02-10T12:45:30Z")
-                    created_str = job["created"].replace("Z", "+00:00")
+                    created_str = str(created_value).replace("Z", "+00:00")
                     created_dt = datetime.fromisoformat(created_str)
                     
                     # Ensure timezone-aware comparison
@@ -90,13 +94,21 @@ async def get_jobs(
                     # Only include if posted in last 24 hours
                     if created_dt >= cutoff:
                         filtered_jobs.append(job)
-                except (ValueError, AttributeError) as e:
-                    # Include jobs with invalid timestamps by default
+                        print(f"[GET /jobs] ✅ Job '{getattr(job, 'title', 'Unknown')}' posted {(now - created_dt).total_seconds() / 3600:.1f}h ago - INCLUDED")
+                    else:
+                        print(f"[GET /jobs] ❌ Job '{getattr(job, 'title', 'Unknown')}' posted {(now - created_dt).total_seconds() / 3600:.1f}h ago - EXCLUDED")
+                except (ValueError, AttributeError, TypeError) as e:
+                    # Include jobs with invalid timestamps at the end
                     print(f"[GET /jobs] Warning: Failed to parse created date: {e}")
-                    filtered_jobs.append(job)
+                    jobs_without_dates.append(job)
+            
+            # Add jobs without dates at the end (lower priority)
+            if jobs_without_dates:
+                print(f"[GET /jobs] ⚠️ {len(jobs_without_dates)} jobs have no timestamp - adding at end")
+                filtered_jobs.extend(jobs_without_dates)
             
             jobs = filtered_jobs
-            print(f"[GET /jobs] After 24h filter: {len(jobs)} jobs remain")
+            print(f"[GET /jobs] After 24h filter: {len(jobs)} jobs remain ({len(jobs) - len(jobs_without_dates)} with valid timestamps)")
         
         # ✅ Filter by posted_within if specified (7d option)
         elif posted_within:
@@ -160,6 +172,29 @@ async def post_match_jobs(request: MatchJobsRequest):
         return results
     except Exception as e:
         print(f"[POST /match-jobs] Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/match-single-job", response_model=MatchJobResult)
+async def post_match_single_job(request: MatchJobsRequest):
+    """Match a single job against a resume with detailed analysis."""
+    print(f"[POST /match-single-job] Matching single job")
+    if len(request.jobs) != 1:
+        raise HTTPException(status_code=400, detail="This endpoint accepts exactly one job")
+    
+    try:
+        job = request.jobs[0]
+        jobs_dicts = [{"title": job.title, "description": job.description, "company": job.company}]
+        results = await match_jobs(request.resume_text, jobs_dicts)
+        
+        if not results:
+            raise HTTPException(status_code=500, detail="Failed to match job")
+        
+        print(f"[POST /match-single-job] Match score: {results[0].match_score}")
+        return results[0]
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[POST /match-single-job] Error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/generate-cover-letter", response_model=GenerateCoverLetterResponse)

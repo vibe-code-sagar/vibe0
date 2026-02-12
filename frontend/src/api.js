@@ -91,6 +91,18 @@ export async function matchJobs(resumeText, jobs) {
   }
 }
 
+export async function matchSingleJob(resumeText, job) {
+  try {
+    const res = await api.post('/match-single-job', {
+      resume_text: resumeText,
+      jobs: [job],
+    });
+    return res.data;
+  } catch (err) {
+    throw new Error(getErrorMessage(err));
+  }
+}
+
 export async function generateCoverLetter(resumeText, jobDescription, company) {
   try {
     const res = await api.post('/generate-cover-letter', {

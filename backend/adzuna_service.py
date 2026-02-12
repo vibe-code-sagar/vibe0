@@ -87,13 +87,17 @@ def _fetch_jobs_sync(
                 title = item.get("title", "Unknown Role")
                 description = item.get("description", "")
                 apply_link = item.get("redirect_url") or item.get("url") or "#"
+                created = item.get("created", None)  # Extract created timestamp
+                job_id = item.get("id", None)  # Extract job ID
                 
                 job = CleanedJob(
                     title=str(title),
                     company=str(company_str),
                     location=str(location_str),
                     description=_truncate_text(description, 300),
-                    apply_link=str(apply_link)
+                    apply_link=str(apply_link),
+                    created=created,
+                    id=str(job_id) if job_id else None
                 )
                 jobs.append(job)
                 

@@ -126,6 +126,35 @@ def _call_ollama_with_retry(prompt: str, max_retries: int = MAX_RETRIES) -> str:
         raise last_error
     return ""
 
+def _calculate_confidence(data: dict, expected_fields: list) -> float:
+    """Calculate confidence score based on response completeness and quality."""
+    if not data:
+        return 0.0
+    
+    # Check how many expected fields are present and non-empty
+    present_fields = sum(1 for field in expected_fields if field in data and data[field])
+    field_ratio = present_fields / len(expected_fields) if expected_fields else 0
+    
+    # Bonus for having substantive content (not just empty arrays)
+    has_content = False
+    for field in expected_fields:
+        value = data.get(field)
+        if isinstance(value, list) and len(value) > 0:
+            has_content = True
+            break
+        elif isinstance(value, (int, float)) and value > 0:
+            has_content = True
+            break
+        elif isinstance(value, str) and len(value) > 10:
+            has_content = True
+            break
+    
+    content_bonus = 0.2 if has_content else 0
+    
+    # Calculate final confidence (0.5 to 1.0 range)
+    confidence = 0.5 + (field_ratio * 0.3) + content_bonus
+    return min(1.0, max(0.0, confidence))
+
 async def analyze_resume(resume_text: str, job_description: str) -> AnalyzeResumeResponse:
     print("[Ollama] Starting resume analysis")
     
@@ -139,9 +168,9 @@ Job Description:
 
 Provide a JSON response with exactly these fields:
 - ats_score: number between 0-100
-- missing_keywords: array of strings
-- strengths: array of strings
-- improvements: array of strings
+- missing_keywords: array of strings (specific keywords from job description not in resume)
+- strengths: array of strings (what matches well)
+- improvements: array of strings (specific actionable improvements)
 
 Return ONLY valid JSON, no markdown formatting."""
 
@@ -152,11 +181,17 @@ Return ONLY valid JSON, no markdown formatting."""
     try:
         data = safe_json_parse(response_text, expect_array=False)
         
+        # Calculate confidence score
+        expected_fields = ["ats_score", "missing_keywords", "strengths", "improvements"]
+        confidence = _calculate_confidence(data, expected_fields)
+        print(f"[Ollama] Analysis confidence: {confidence:.2f}")
+        
         return AnalyzeResumeResponse(
             ats_score=float(data.get("ats_score", 0)),
             missing_keywords=data.get("missing_keywords", []),
             strengths=data.get("strengths", []),
-            improvements=data.get("improvements", [])
+            improvements=data.get("improvements", []),
+            confidence=confidence
         )
     except Exception as e:
         print(f"[Ollama] Error creating response: {str(e)}")
@@ -165,7 +200,8 @@ Return ONLY valid JSON, no markdown formatting."""
             ats_score=0.0,
             missing_keywords=[],
             strengths=[],
-            improvements=["Unable to analyze resume. Please try again."]
+            improvements=["Unable to analyze resume. Please try again."],
+            confidence=0.0
         )
 
 async def match_jobs(resume_text: str, jobs: list) -> list:
@@ -234,16 +270,27 @@ Return ONLY the JSON array for all {len(jobs)} jobs. Start your response with [ 
         results = []
         for item in data:
             try:
+                # Calculate confidence based on match quality
+                expected_fields = ["title", "company", "match_score", "reasoning"]
+                confidence = _calculate_confidence(item, expected_fields)
+                
+                # Adjust confidence based on reasoning length (longer = more confident)
+                reasoning = str(item.get("reasoning", ""))
+                if len(reasoning) > 50:
+                    confidence = min(1.0, confidence + 0.1)
+                
                 results.append(MatchJobResult(
                     title=str(item.get("title", "Unknown")),
                     company=str(item.get("company", "Unknown")),
                     match_score=float(item.get("match_score", 0)),
-                    reasoning=str(item.get("reasoning", ""))
+                    reasoning=reasoning,
+                    confidence=confidence
                 ))
             except Exception as e:
                 print(f"[Ollama] Error parsing job result: {str(e)}")
                 continue
         
+        print(f"[Ollama] Successfully parsed {len(results)} job matches with avg confidence: {sum(r.confidence for r in results) / len(results):.2f}" if results else "[Ollama] No results parsed")
         return results
         
     except Exception as e:
@@ -280,9 +327,23 @@ Return ONLY the cover letter text, no JSON or markdown formatting."""
     return GenerateCoverLetterResponse(cover_letter=response_text.strip())
 
 async def optimize_resume(resume_text: str, job_description: str) -> OptimizeResumeResponse:
-    print("[Ollama] Starting resume optimization")
+    print("[Ollama] Starting resume optimization with keyword injection")
     
-    # Step 1: Generate optimized resume
+    # Step 1: Analyze current resume to identify missing keywords
+    print("[Ollama] Step 1: Analyzing current resume to identify gaps")
+    try:
+        current_analysis = await analyze_resume(resume_text, job_description)
+        missing_keywords = current_analysis.missing_keywords
+        current_score = current_analysis.ats_score
+        print(f"[Ollama] Current score: {current_score}, Missing {len(missing_keywords)} keywords")
+    except Exception as e:
+        print(f"[Ollama] Analysis error: {str(e)}, proceeding with general optimization")
+        missing_keywords = []
+        current_score = 0
+    
+    # Step 2: Generate optimized resume with targeted keyword injection
+    keywords_text = ", ".join(missing_keywords[:10]) if missing_keywords else "general job requirements"
+    
     optimize_prompt = f"""You are an expert resume writer and ATS optimization specialist. Your task is to improve the following resume to better match the job description while maintaining complete honesty and factual accuracy.
 
 Resume:
@@ -291,35 +352,52 @@ Resume:
 Job Description:
 {job_description}
 
+CRITICAL MISSING KEYWORDS TO INJECT:
+{keywords_text}
+
+OPTIMIZATION STRATEGY - KEYWORD INJECTION:
+1. Identify existing experiences where these keywords naturally fit
+2. Rewrite bullet points to incorporate missing keywords organically
+3. Add these keywords to skills section if not present (only if they can be reasonably inferred from experience)
+4. Enhance professional summary to include relevant keywords
+5. Use synonyms and related terms for variety
+6. Ensure keywords appear in context, not just as a list
+
 IMPORTANT RULES:
 1. DO NOT invent or fabricate any experience, skills, or qualifications
 2. Only enhance and reframe existing information
-3. Naturally incorporate missing keywords from the job description into existing experience
+3. Naturally incorporate missing keywords into existing experience descriptions
 4. Improve bullet points for clarity and impact using action verbs
-5. Enhance the professional summary to align with job requirements
+5. If a keyword cannot be honestly incorporated, skip it
 6. Maintain the original resume structure and formatting
 7. Keep the tone professional and authentic
 8. Use quantifiable achievements where they already exist
 
 OPTIMIZATION TASKS:
 - Analyze the job description for key requirements and keywords
-- Identify gaps in the current resume
-- Rewrite resume sections to naturally incorporate relevant keywords
+- Identify WHERE in the existing resume each missing keyword could fit
+- Rewrite those specific sections to naturally include the keywords
 - Improve bullet point clarity (use strong action verbs, be specific)
-- Enhance the professional summary to highlight relevant experience
+- Enhance the professional summary to highlight relevant experience with keywords
+- Add technical skills section if missing (only with honest skills)
 - Ensure all improvements are based on existing information only
+
+EXAMPLE KEYWORD INJECTION:
+Before: "Developed web applications for clients"
+After: "Developed responsive web applications using React and Node.js, implementing RESTful APIs and modern JavaScript frameworks to deliver scalable client solutions"
 
 Return ONLY the complete optimized resume text. Do not include any explanations, markdown formatting, or JSON."""
 
     optimized_text = _call_ollama_with_retry(optimize_prompt)
     print(f"[Ollama] Optimized resume generated: {len(optimized_text)} chars")
     
-    # Step 2: Use real ATS analysis for consistent scoring
-    print("[Ollama] Calculating new ATS score using analyze_resume")
+    # Step 3: Use real ATS analysis for consistent scoring
+    print("[Ollama] Step 3: Calculating new ATS score using analyze_resume")
     try:
         analysis_result = await analyze_resume(optimized_text, job_description)
         estimated_score = analysis_result.ats_score
-        print(f"[Ollama] Estimated new ATS score: {estimated_score}")
+        improvement = estimated_score - current_score
+        print(f"[Ollama] New ATS score: {estimated_score} (improvement: {improvement:+.1f})")
     except Exception as e:
         print(f"[Ollama] Score estimation error: {str(e)}, using default score of 75")
         estimated_score = 75.0
