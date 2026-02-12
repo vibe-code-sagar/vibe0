@@ -216,9 +216,9 @@ function HomePage() {
       const data = await optimizeResume(text, selectedJob.description);
       setOptimizedResumeResult({
         optimized_resume: data.optimized_resume,
-        estimated_new_score: data.estimated_new_score,
+        original_score: data.original_score,
+        new_score: data.new_score,
         original_resume: text,
-        original_score: atsResult.ats_score,
       });
     } catch (e) {
       setError(e.message || 'Failed to optimize resume.');
@@ -332,7 +332,7 @@ function HomePage() {
             originalResume={optimizedResumeResult.original_resume}
             optimizedResume={optimizedResumeResult.optimized_resume}
             originalScore={optimizedResumeResult.original_score}
-            estimatedNewScore={optimizedResumeResult.estimated_new_score}
+            newScore={optimizedResumeResult.new_score}
             onClose={() => setOptimizedResumeResult(null)}
           />
         )}

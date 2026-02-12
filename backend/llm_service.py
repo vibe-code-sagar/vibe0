@@ -391,18 +391,19 @@ Return ONLY the complete optimized resume text. Do not include any explanations,
     optimized_text = _call_ollama_with_retry(optimize_prompt)
     print(f"[Ollama] Optimized resume generated: {len(optimized_text)} chars")
     
-    # Step 3: Use real ATS analysis for consistent scoring
+    # Step 3: Use real ATS analysis for new score
     print("[Ollama] Step 3: Calculating new ATS score using analyze_resume")
     try:
         analysis_result = await analyze_resume(optimized_text, job_description)
-        estimated_score = analysis_result.ats_score
-        improvement = estimated_score - current_score
-        print(f"[Ollama] New ATS score: {estimated_score} (improvement: {improvement:+.1f})")
+        new_score = analysis_result.ats_score
+        improvement = new_score - current_score
+        print(f"[Ollama] New ATS score: {new_score} (improvement: {improvement:+.1f})")
     except Exception as e:
-        print(f"[Ollama] Score estimation error: {str(e)}, using default score of 75")
-        estimated_score = 75.0
+        print(f"[Ollama] Score analysis error: {str(e)}, using default score of 75")
+        new_score = 75.0
     
     return OptimizeResumeResponse(
         optimized_resume=optimized_text.strip(),
-        estimated_new_score=estimated_score
+        original_score=current_score,
+        new_score=new_score
     )

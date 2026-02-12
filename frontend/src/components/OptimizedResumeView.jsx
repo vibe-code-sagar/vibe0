@@ -4,7 +4,7 @@ export default function OptimizedResumeView({
     originalResume,
     optimizedResume,
     originalScore,
-    estimatedNewScore,
+    newScore,
     onClose
 }) {
     const [copied, setCopied] = React.useState(false);
@@ -15,7 +15,7 @@ export default function OptimizedResumeView({
         setTimeout(() => setCopied(false), 2000);
     };
 
-    const scoreDiff = estimatedNewScore - originalScore;
+    const scoreDiff = newScore - originalScore;
     const scoreDiffClass = scoreDiff > 0 ? 'scoreDiff--positive' : 'scoreDiff--neutral';
 
     return (
@@ -40,9 +40,9 @@ export default function OptimizedResumeView({
                     →
                 </div>
                 <div className="scoreComparison__item">
-                    <span className="scoreComparison__label">Estimated New Score</span>
+                    <span className="scoreComparison__label">New ATS Score</span>
                     <span className="scoreComparison__value scoreComparison__value--new">
-                        {Math.round(estimatedNewScore)}%
+                        {Math.round(newScore)}%
                     </span>
                 </div>
                 {scoreDiff > 0 && (

@@ -51,4 +51,5 @@ class OptimizeResumeRequest(BaseModel):
 
 class OptimizeResumeResponse(BaseModel):
     optimized_resume: str
-    estimated_new_score: float = Field(..., ge=0, le=100)
+    original_score: float = Field(..., ge=0, le=100)
+    new_score: float = Field(..., ge=0, le=100)

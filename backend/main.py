@@ -217,7 +217,8 @@ async def post_generate_optimized_resume(request: OptimizeResumeRequest):
     print(f"[POST /generate-optimized-resume] Starting optimization")
     try:
         result = await optimize_resume(request.resume_text, request.job_description)
-        print(f"[POST /generate-optimized-resume] Optimized resume: {len(result.optimized_resume)} chars, Score: {result.estimated_new_score}")
+        score_delta = result.new_score - result.original_score
+        print(f"[POST /generate-optimized-resume] Optimized resume: {len(result.optimized_resume)} chars, Score: {result.original_score} → {result.new_score} (Δ{score_delta:+.1f})")
         return result
     except Exception as e:
         print(f"[POST /generate-optimized-resume] Error: {str(e)}")
